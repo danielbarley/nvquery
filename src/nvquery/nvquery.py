@@ -26,7 +26,7 @@ class NvmlReader:
         if len(self.handles) != self.device_count:
             raise RuntimeError("Failed to get all device handles")
         for idx, _ in enumerate(self.handles):
-            filename = log_file_base_name + str(idx)
+            filename = log_file_base_name + "_" + str(idx) + ".csv"
             self.logs.append(open(filename, "w"))
 
     def __enter__(self):
@@ -82,27 +82,42 @@ class NvmlReader:
                 timeStamp=self.last_mem_sample_time,
             )
             print(
-                f"{len(samples)} mem util samples "
+                f"{len(samples)} samples "
                 f"over {(samples[-1].timeStamp - samples[0].timeStamp) / 1e3}ms\n"
             )
 
     def log_header(self):
-        header_string = "Time, Power\n"
+        header_string = "Time,Power\n"
         for log in self.logs:
             log.write(header_string)
 
     def log_samples(self):
         for id, handle in enumerate(self.handles):
-            _, samples = pynvml.nvmlDeviceGetSamples(
-                device=handle,
-                sampling_type=self.sampling_type,
-                timeStamp=self.last_sample_time,
-            )
-            self.last_sample_time = samples[-1].timeStamp
-            for sample in samples:
-                self.logs[id].write(
-                    f"{sample.timeStamp}, {sample.sampleValue.uiVal}\n"
+            try:
+                _, samples = pynvml.nvmlDeviceGetSamples(
+                    device=handle,
+                    sampling_type=self.sampling_type,
+                    timeStamp=self.last_sample_time,
                 )
+                self.last_sample_time = samples[-1].timeStamp
+                for sample in samples:
+                    self.logs[id].write(
+                        f"{sample.timeStamp},{sample.sampleValue.uiVal}\n"
+                    )
+            except pynvml.NVMLError as e:
+                print(f"WARNING nvml error: {e}")
+
+    def set_last_seen(self):
+        for id, handle in enumerate(self.handles):
+            try:
+                _, samples = pynvml.nvmlDeviceGetSamples(
+                    device=handle,
+                    sampling_type=self.sampling_type,
+                    timeStamp=self.last_sample_time,
+                )
+                self.last_sample_time = samples[-1].timeStamp
+            except pynvml.NVMLError as e:
+                print(f"WARNING nvml error: {e}")
 
 
 if __name__ == "__main__":
