@@ -3,6 +3,25 @@ from pynvml import _nvmlSamplingType_t
 from time import sleep
 
 
+_SAMPLE_VALUE_TYPE_TO_FIELD = {
+    0: "dVal",
+    1: "uiVal",
+    2: "ulVal",
+    3: "ullVal",
+    4: "sllVal",
+    5: "siVal",
+    6: "usVal",
+}
+
+_SAMPLING_TYPE_TO_HEADER = {
+    pynvml.NVML_TOTAL_POWER_SAMPLES: "Power",
+    pynvml.NVML_MEMORY_UTILIZATION_SAMPLES: "Memory Util",
+    pynvml.NVML_GPU_UTILIZATION_SAMPLES: "GPU Util",
+    pynvml.NVML_PROCESSOR_CLK_SAMPLES: "GPU Clk",
+    pynvml.NVML_MEMORY_CLK_SAMPLES: "Memory Clk",
+}
+
+
 class NvmlReader:
     def __init__(
         self,
@@ -13,6 +32,8 @@ class NvmlReader:
             pynvml.NVML_TOTAL_POWER_SAMPLES,
             pynvml.NVML_MEMORY_UTILIZATION_SAMPLES,
             pynvml.NVML_GPU_UTILIZATION_SAMPLES,
+            pynvml.NVML_PROCESSOR_CLK_SAMPLES,
+            pynvml.NVML_MEMORY_CLK_SAMPLES,
         ]:
             raise ValueError("Illegal or unsupported sampling type")
         self.sampling_type = sampling_type
@@ -26,8 +47,16 @@ class NvmlReader:
         if len(self.handles) != self.device_count:
             raise RuntimeError("Failed to get all device handles")
         for idx, _ in enumerate(self.handles):
-            filename = log_file_base_name + str(idx)
+            filename = log_file_base_name + "_" + str(idx) + ".csv"
             self.logs.append(open(filename, "w"))
+        # Perform test read on first device to get sampling_type
+        sample_value_type, _ = pynvml.nvmlDeviceGetSamples(
+            device=self.handles[0],
+            sampling_type=self.sampling_type,
+            timeStamp=0,
+        )
+        self.field = _SAMPLE_VALUE_TYPE_TO_FIELD.get(sample_value_type)
+        self.metric = _SAMPLING_TYPE_TO_HEADER.get(sampling_type)
 
     def __enter__(self):
         return self
@@ -82,27 +111,42 @@ class NvmlReader:
                 timeStamp=self.last_mem_sample_time,
             )
             print(
-                f"{len(samples)} mem util samples "
+                f"{len(samples)} samples "
                 f"over {(samples[-1].timeStamp - samples[0].timeStamp) / 1e3}ms\n"
             )
 
     def log_header(self):
-        header_string = "Time, Power\n"
+        header_string = f"Time,{self.metric}\n"
         for log in self.logs:
             log.write(header_string)
 
     def log_samples(self):
         for id, handle in enumerate(self.handles):
-            _, samples = pynvml.nvmlDeviceGetSamples(
-                device=handle,
-                sampling_type=self.sampling_type,
-                timeStamp=self.last_sample_time,
-            )
-            self.last_sample_time = samples[-1].timeStamp
-            for sample in samples:
-                self.logs[id].write(
-                    f"{sample.timeStamp}, {sample.sampleValue.uiVal}\n"
+            try:
+                sample_value_type, samples = pynvml.nvmlDeviceGetSamples(
+                    device=handle,
+                    sampling_type=self.sampling_type,
+                    timeStamp=self.last_sample_time,
                 )
+                self.last_sample_time = samples[-1].timeStamp
+                for sample in samples:
+                    self.logs[id].write(
+                        f"{sample.timeStamp},{getattr(sample.sampleValue, self.field)}\n"
+                    )
+            except pynvml.NVMLError as e:
+                print(f"WARNING nvml error during sampling: {e}")
+
+    def set_last_seen(self):
+        for id, handle in enumerate(self.handles):
+            try:
+                _, samples = pynvml.nvmlDeviceGetSamples(
+                    device=handle,
+                    sampling_type=self.sampling_type,
+                    timeStamp=self.last_sample_time,
+                )
+                self.last_sample_time = samples[-1].timeStamp
+            except pynvml.NVMLError as e:
+                print(f"WARNING nvml error: {e}")
 
 
 if __name__ == "__main__":
