@@ -123,7 +123,7 @@ class NvmlReader:
     def log_samples(self):
         for id, handle in enumerate(self.handles):
             try:
-                sample_value_type, samples = pynvml.nvmlDeviceGetSamples(
+                _, samples = pynvml.nvmlDeviceGetSamples(
                     device=handle,
                     sampling_type=self.sampling_type,
                     timeStamp=self.last_sample_time,
