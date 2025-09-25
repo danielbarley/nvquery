@@ -65,9 +65,6 @@ class NvmlReader:
         for log in self.logs:
             log.close()
 
-    def __del__(self):
-        pynvml.nvmlShutdown()
-
     def print_clocks(self):
         for id, handle in enumerate(self.handles):
             print(f" Device: {id} ".center(80, "="))
@@ -92,6 +89,22 @@ class NvmlReader:
             print(
                 f"Device {id}: Arch: {pynvml.nvmlDeviceGetSupportedGraphicsClocks(handle, 1215)}"
             )
+
+    def print_current_clock(self):
+        for id, handle in enumerate(self.handles):
+            print(f" Device: {id} ".center(80, "="))
+            for clock_type, name in {
+                pynvml.NVML_CLOCK_SM: "SM Clock",
+                pynvml.NVML_CLOCK_MEM: "Memory Clock",
+            }.items():
+                print(
+                    name,
+                    pynvml.nvmlDeviceGetClock(
+                        handle,
+                        type=clock_type,
+                        id=pynvml.NVML_CLOCK_ID_CURRENT,
+                    ),
+                )
 
     def print_current_utilization(self):
         for id, handle in enumerate(self.handles):
@@ -150,8 +163,5 @@ class NvmlReader:
 
 
 if __name__ == "__main__":
-    reader = NvmlReader("log")
-    reader.log_header()
-    reader.log_samples()
-    sleep(2)
-    reader.log_samples()
+    power_reader = NvmlReader("power")
+    power_reader.print_clocks()
