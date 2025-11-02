@@ -41,7 +41,7 @@ class NvmlReader:
         self.device_count = pynvml.nvmlDeviceGetCount()
         self.handles = []
         self.logs = []
-        self.last_sample_time = 0
+        self.last_sample_time = []
         for device_id in range(self.device_count):
             self.handles.append(pynvml.nvmlDeviceGetHandleByIndex(device_id))
         if len(self.handles) != self.device_count:
@@ -49,6 +49,7 @@ class NvmlReader:
         for idx, _ in enumerate(self.handles):
             filename = log_file_base_name + "_" + str(idx) + ".csv"
             self.logs.append(open(filename, "w"))
+            self.last_sample_time.append(0)
         # Perform test read on first device to get sampling_type
         sample_value_type, _ = pynvml.nvmlDeviceGetSamples(
             device=self.handles[0],
@@ -94,8 +95,10 @@ class NvmlReader:
         for id, handle in enumerate(self.handles):
             print(f" Device: {id} ".center(80, "="))
             for clock_type, name in {
+                pynvml.NVML_CLOCK_GRAPHICS: "Graphics Clock",
                 pynvml.NVML_CLOCK_SM: "SM Clock",
                 pynvml.NVML_CLOCK_MEM: "Memory Clock",
+                pynvml.NVML_CLOCK_VIDEO: "Video enc/dec Clock",
             }.items():
                 print(
                     name,
@@ -139,15 +142,15 @@ class NvmlReader:
                 _, samples = pynvml.nvmlDeviceGetSamples(
                     device=handle,
                     sampling_type=self.sampling_type,
-                    timeStamp=self.last_sample_time,
+                    timeStamp=self.last_sample_time[id],
                 )
-                self.last_sample_time = samples[-1].timeStamp
+                self.last_sample_time[id] = samples[-1].timeStamp
                 for sample in samples:
                     self.logs[id].write(
                         f"{sample.timeStamp},{getattr(sample.sampleValue, self.field)}\n"
                     )
             except pynvml.NVMLError as e:
-                print(f"WARNING nvml error during sampling: {e}")
+                print(f"WARNING nvml error during sampling device {id}: {e}")
 
     def set_last_seen(self):
         for id, handle in enumerate(self.handles):
@@ -155,13 +158,13 @@ class NvmlReader:
                 _, samples = pynvml.nvmlDeviceGetSamples(
                     device=handle,
                     sampling_type=self.sampling_type,
-                    timeStamp=self.last_sample_time,
+                    timeStamp=self.last_sample_time[id],
                 )
-                self.last_sample_time = samples[-1].timeStamp
+                self.last_sample_time[id] = samples[-1].timeStamp
             except pynvml.NVMLError as e:
-                print(f"WARNING nvml error: {e}")
+                print(f"WARNING nvml error at device {id}: {e}")
 
 
 if __name__ == "__main__":
     power_reader = NvmlReader("power")
-    power_reader.print_clocks()
+    power_reader.print_current_clock()
